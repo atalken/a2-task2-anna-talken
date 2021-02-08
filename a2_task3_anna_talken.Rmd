@@ -1,0 +1,137 @@
+---
+title: "Tidy Tuesday Plastic Pollution"
+author: "Anna Talken"
+date: "2/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidytuesdayR)
+library(stringi)
+library(tidygeocoder)
+```
+
+# Read in the data
+```{r}
+tuesdata <- tidytuesdayR::tt_load('2021-01-26')
+
+plastics <- tuesdata$plastics %>% 
+  filter(
+    !(parent_company %in% c("Grand Total", "null", "Null", "Unbranded"))
+  ) %>% 
+  mutate(
+    parent_company = parent_company %>% 
+      tolower())
+```
+
+## Wrangle the data
+```{r}
+
+top5 <- plastics %>% 
+ group_by(parent_company) %>% 
+  summarise(
+    country_count = n_distinct(country), 
+    grand_total_sum = sum(grand_total, na.rm = T)
+  ) %>% 
+  arrange(desc(country_count, grand_total_sum)) %>% 
+  head(5)
+```
+
+```{r}
+hq <- c(
+  "Atlanta, Georgia, United States", #Coca-Cola
+  "New York, New York, United States", #PepsiCo
+  "Vevey, Vaud, Switzerland", #Nestle
+  "Mclean, Virginia, United States", #Mars
+  "London, England, United Kingdom" #Unilever
+)
+
+coords = geo(hq, method = "osm")
+
+countries = plastics %>% 
+  filter(parent_company %in% top5$parent_company) %>% 
+  group_by(country) %>% 
+  summarise(count = n())
+
+coords_countries = geo(countries$country, method = "osm")
+# Get Taiwan coordinates, which was not recognized
+coords_taiwan = geo("Taiwan", method = "osm")
+coords_country = coords_countries %>% 
+  mutate(
+    lat = ifelse(address == "Taiwan_ Republic Of China (Roc)", coords_taiwan$lat, lat),
+    long = ifelse(address == "Taiwan_ Republic Of China (Roc)", coords_taiwan$long, long)
+) 
+```
+
+Matching countries with lat/long
+```{r}
+countries <- countries %>% 
+  left_join(coords_country,  by = c("country" = "address"))
+countries
+```
+
+Matching companies with lat/long
+
+```{r}
+top_parent_companies = top5 %>% 
+  mutate(hq = hq, lat = coords$lat, long = coords$long) %>% 
+  # st_as_sf(crs = 4326, coords = c("long", "lat")) %>%
+  mutate(parent_company = case_when(
+    parent_company == "The Coca-Cola Company" ~ "Coca-Cola",
+    parent_company == "Mars, Incorporated" ~ "Mars, Inc.",
+    TRUE ~ parent_company
+  )) %>% 
+  select(name = parent_company) %>% 
+  mutate(type = "Parent Company")
+
+companies <- top5 %>% 
+  mutate(hq = hq, com_lat = coords$lat, com_long = coords$long)
+
+```
+ Joining countries and companies into one df
+ 
+```{r}
+com_countries <- plastics %>% 
+  select(country, parent_company, grand_total)
+# companies
+plotting <- com_countries %>% 
+  left_join(countries) %>% 
+  left_join(companies) %>% 
+  filter(parent_company %in% companies$parent_company)
+plotting
+```
+
+
+```{r}
+Using the joined data for the final plot.
+library(echarts4r)
+library(echarts4r.assets)
+plotting %>% 
+  group_by(parent_company) %>% 
+  e_charts() %>% 
+  e_globe(
+    environment = gray(0.1),
+    shading = 'lambert', 
+    light.ambient = list(intensity = 10)
+  ) %>% 
+  e_lines_3d(
+    com_long, 
+    com_lat, 
+    long, 
+    lat, 
+    value = count,
+    source_name = parent_company, 
+    target_name = country,
+    effect = list(show = TRUE)
+  ) %>% 
+  e_legend_toggle_select(name = "Company") %>% 
+  e_legend(textStyle = list(color = gray(0.9)))
+```
+
+
+
+
+
+```{r}
