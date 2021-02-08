@@ -20,33 +20,86 @@ library(jtools)
 ```{r}
 palmetto <- read_csv(here("data", "palmetto.csv"),
                      col_types = cols(.default = 'c')) %>% 
+  
+  #convert the following variables to numeric class
   mutate(height = as.numeric(height)) %>% 
   mutate(width = as.numeric(width)) %>% 
   mutate(length = as.numeric(length)) %>% 
   mutate(green_lvs = as.numeric(green_lvs)) %>% 
+  
+  #select for species, height, length, width, green leaves
     select(species, height, length, width, green_lvs)
 ```
 
 ## Data visualization exploring differences in height, canopy length, canopy width, and green leaves for two species
 
-```{r, fig.cap = "Figure 1. Exploratory scatterplot comparing canopy hieght and canopy width in Florida Palmettos between two species. Red= Species 1, Blue = species 2."}
+```{r, fig.cap = "Figure 1. Exploratory scatterplot comparing the maximum canopy hieght and canopy width in Florida Palmettos between two species: Serenoa Repens and Sabal Etonia."}
   ggplot(data = palmetto, aes(x = width, y = height, color = species)) +
-  geom_point(na.rm = TRUE, alpha = 1/2) 
+  geom_point(na.rm = TRUE) +
+  scale_color_manual(values = c("cyan4", "coral")) +
+  theme_minimal() +
+  labs( title = "Comparison between canopy width and height in Florida Palmettos",
+        x = "Width",
+        y = "Height")
 ```
-```{r, fig.cap = Figure 2. Second exploratory graph comparing the density of green leaves between species}
+
+There appears to be a positive correlation between canopy width and height within both species of Florida Palmettos. 
+
+
+```{r, fig.cap = "Figure 2. A density comparison of the number of green leaves found in each species: Serenoa Repens and Sabal Etonia"}
 # Second exploratory graph
 ggplot(data = palmetto, aes(x = green_lvs, group = species, fill = species)) +
-  geom_density(adjust = 1.5)
+  geom_density(adjust = 1.5, alpha = 0.5) +
+   theme_minimal() +
+  labs( title = "Abundance of green leaves found within two species of Florida Palmettos",
+        x = "Green Leaves",
+        y = "Density")
 ```
-```{r}
+The number of green leaves in Sabal Etonia that makes up the greatest density of total green leaves peaks around 3 to 4 leaves, whereas there is a more spread out density of green leave numbers for Serenoa Repens, with the highest density of green leave numbers at around 6 to 7 leaves. 
+
+
+```{r, fig.cap = "Figure 3. A comparison between the number of green leaves found and the widest length of the canopy within two species of Florida Palmettos: Serenoa Repens and Sabal Etonia."}
 ggplot(data = palmetto, aes(x = green_lvs, y = length, color = species, shape = species)) +
   geom_point() +
   scale_color_brewer() +
-  theme_minimal()
+  theme_minimal() +
+   labs( title = "Comparison of the number of green leaves to canopy length",
+        x = "Green Leaves",
+        y = "Length")
 ```
-
+There appears to be a positive correlation between number of green leaves and the widest length of the canopy for both species, though Serenoa Repens appears to have a braoder range of green leave abundance. 
 
 
 ## Binary logistic regression
 
+```{r}
+# Turning species into class 'factor'
+palmettos <- palmetto %>% 
+  mutate(species = as.factor(species))
+
+#Creating a model for binomial logistic regression
+palmetto_blr <- glm(species ~ height + length + width + green_lvs,
+      data = palmettos,
+      family = binomial)
+
+# Get a tidy version of the model using broom
+blr_tidy <- broom:: tidy(palmetto_blr)
+```
+
+
 ## how successful this model would classify a plant correctly
+
+```{r}
+#Converting log odds to the probability of prediting whether the plant is ___ for each observation
+
+blr_fitted <- palmetto_blr %>% 
+  broom::augment(type.predict = "response")
+
+
+ggplot(data = blr_fitted, aes(x = width, y = .fitted)) +
+  geom_point(aes(color = species)) + 
+  geom_smooth(aes(color = species), se = FALSE) +
+  labs(x = "Length",
+       y = "Probability of being a")
+```
+
